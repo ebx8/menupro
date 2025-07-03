@@ -10,3 +10,12 @@
 9. Salir
 -----------------------------------------
 Selecciona una opción [1-9]:
+
+
+
+########
+permite cambiar y agregar puertos
+websocket puerto 80
+badvpn 7300
+ssh bin/bash
+
