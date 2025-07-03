@@ -1,0 +1,12 @@
+========== PANEL VPS EBX8 - MULTITOOL ==========
+1. Estado de servicios y puertos
+2. Gestión de usuarios SSH
+3. BADVPN UDPGW
+4. Dropbear SSH
+5. Squid Proxy
+6. Stunnel (TLS/SSL)
+7. WebSocket SSH (Relax)
+8. Abrir/cerrar puertos TCP
+9. Salir
+-----------------------------------------
+Selecciona una opción [1-9]:
