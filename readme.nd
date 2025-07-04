@@ -18,4 +18,14 @@ permite cambiar y agregar puertos
 websocket puerto 80
 badvpn 7300
 ssh bin/bash
+# comando pro
+curl -fsSL https://raw.githubusercontent.com/ebx8/menupro/main/menu2.sh \
+  | sudo tee /usr/local/bin/pro >/dev/null \
+  && sudo chmod +x /usr/local/bin/pro \
+  && echo "✅ Instalado: ya tienes el comando 'pro'."
 
+#comando menu
+curl -fsSL https://raw.githubusercontent.com/ebx8/menupro/main/menu2.sh \
+  | sudo tee /usr/local/bin/menu >/dev/null \
+  && sudo chmod +x /usr/local/bin/menu \
+  && echo "Instalación OK: ya tienes el comando 'menu'."
