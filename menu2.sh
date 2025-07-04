@@ -7,23 +7,66 @@ pausa() { read -p "Pulsa Enter para volver..."; }
 
 # ---------- GESTIÓN DE USUARIOS SSH ----------
 crear_usuario() {
-    clear; echo -e "${CYAN}=== Crear Usuario SSH ===${RESET}"
+    clear; echo -e "${CYAN}=== Crear Usuario SSH con límite de sesiones ===${RESET}"
     read -p "Usuario: " user
     read -s -p "Contraseña: " pass; echo
     read -p "Días de validez: " dias
-    # crea usuario con shell /bin/bash
+    read -p "Máximo de sesiones simultáneas [1]: " maxses
+    [[ -z "$maxses" ]] && maxses=1
+
+    # 1) Crear usuario con bash y expiración
     useradd -m -e "$(date -d "$dias days" +"%Y-%m-%d")" -s /bin/bash "$user"
     echo "$user:$pass" | chpasswd
-    echo -e "${GREEN}Usuario $user creado con shell /bin/bash.${RESET}"
+
+    # 2) Escribir límite en limits.conf
+    echo "$user hard maxlogins $maxses" >> /etc/security/limits.conf
+
+    # 3) Asegurar que Dropbear carga pam_limits
+    cat >/etc/pam.d/dropbear << 'EOF'
+auth    include   common-auth
+account include   common-account
+password include  common-password
+session required  pam_limits.so
+session include   common-session-noninteractive
+EOF
+
+    # 4) Reiniciar Dropbear para recargar PAM
+    systemctl restart dropbear
+
+    echo -e "${GREEN}Usuario $user creado con /bin/bash y límite de $maxses sesión(es).${RESET}"
     pausa
 }
 eliminar_usuario() {
     clear; echo -e "${CYAN}=== Eliminar Usuario SSH ===${RESET}"
     read -p "Usuario a eliminar: " user
-    if userdel -r "$user"; then
-        echo -e "${GREEN}Usuario $user eliminado.${RESET}"
-    else
+
+    # 1) Comprueba si existe
+    if ! id "$user" &>/dev/null; then
         echo -e "${YELLOW}El usuario $user no existe.${RESET}"
+        pausa
+        return
+    fi
+
+    # 2) Busca procesos activos del usuario
+    pids=$(pgrep -u "$user")
+    if [[ -n "$pids" ]]; then
+        echo -e "${YELLOW}El usuario $user tiene procesos activos (PID: $pids).${RESET}"
+        read -p "¿Matar procesos y eliminar usuario? [s/N]: " resp
+        if [[ ! "$resp" =~ ^[sS] ]]; then
+            echo "Operación cancelada."
+            pausa
+            return
+        fi
+        # 3) Forzar desconexión
+        kill -9 $pids 2>/dev/null
+        sleep 1
+    fi
+
+    # 4) Elimina el usuario y su home
+    if userdel -r "$user"; then
+        echo -e "${GREEN}Usuario $user eliminado correctamente.${RESET}"
+    else
+        echo -e "${RED}Error al eliminar el usuario $user.${RESET}"
     fi
     pausa
 }
@@ -61,24 +104,37 @@ abrir_puerto() {
     clear; echo -e "${CYAN}=== ABRIR PUERTO TCP ===${RESET}"
     read -p "Puerto TCP a abrir: " port
     [[ -z "$port" ]] && { echo "No se ingresó puerto."; sleep 1; return; }
+
+    # 1) Abrir en firewall
     if command -v ufw >/dev/null 2>&1 && ufw status | grep -qw active; then
-        ufw allow "$port"/tcp
+        ufw allow "${port}/tcp"
     else
         iptables -I INPUT -p tcp --dport "$port" -j ACCEPT
     fi
-    echo -e "${GREEN}Puerto $port abierto.${RESET}"
+
+    # 2) Redirigir TODO SSH de ese puerto al 22 interno
+    iptables -t nat -I PREROUTING -p tcp --dport "$port" -j REDIRECT --to-port 22
+
+    echo -e "${GREEN}Puerto $port abierto y redirigido internamente al sshd (22).${RESET}"
     pausa
 }
+
 cerrar_puerto() {
     clear; echo -e "${CYAN}=== CERRAR PUERTO TCP ===${RESET}"
     read -p "Puerto TCP a cerrar: " port
     [[ -z "$port" ]] && { echo "No se ingresó puerto."; sleep 1; return; }
+
+    # 1) Quitar del firewall
     if command -v ufw >/dev/null 2>&1 && ufw status | grep -qw active; then
-        ufw delete allow "$port"/tcp
+        ufw delete allow "${port}/tcp" 2>/dev/null || true
     else
-        iptables -D INPUT -p tcp --dport "$port" -j ACCEPT 2>/dev/null
+        iptables -D INPUT -p tcp --dport "$port" -j ACCEPT 2>/dev/null || true
     fi
-    echo -e "${YELLOW}Puerto $port cerrado.${RESET}"
+
+    # 2) Eliminar la redirección al 22
+    iptables -t nat -D PREROUTING -p tcp --dport "$port" -j REDIRECT --to-port 22 2>/dev/null || true
+
+    echo -e "${YELLOW}Puerto $port cerrado y la redirección eliminada.${RESET}"
     pausa
 }
 
@@ -515,4 +571,3 @@ while true; do
         *) echo "Opción inválida." ; sleep 1 ;;
     esac
 done
-
